@@ -1,69 +1,150 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bot, ChevronDown, CircleHelp, Clock3, LayoutDashboard, MessageSquareText, MoreHorizontal, Plus, Search, Settings, Sparkles, Target, TrendingUp, Users, Zap } from 'lucide-react';
+import {
+  Activity, ArrowRight, Bell, Bot, CalendarClock, Check, ChevronDown, CircleDollarSign,
+  Clock3, Filter, Flame, Inbox, LayoutDashboard, Menu, MessageSquare, Plus, Search,
+  Send, Settings, Sparkles, Target, TrendingUp, UserRound, Users, X, Zap
+} from 'lucide-react';
 import './styles.css';
 
 const seedLeads = [
-  { id: 1, name: 'Olivia Carter', company: 'Northstar Studio', channel: 'Website', value: 2400, status: 'Hot', last: '12 min ago', intent: 'Ready to buy', avatar: 'OC' },
-  { id: 2, name: 'Daniel Kim', company: 'Kite Labs', channel: 'WhatsApp', value: 1800, status: 'Warm', last: '38 min ago', intent: 'Comparing options', avatar: 'DK' },
-  { id: 3, name: 'Maya Wilson', company: 'Willow & Co.', channel: 'Instagram', value: 950, status: 'New', last: '1 hr ago', intent: 'Asked for pricing', avatar: 'MW' },
-  { id: 4, name: 'Noah Bennett', company: 'Arc Supply', channel: 'Website', value: 4200, status: 'Follow-up', last: '3 hrs ago', intent: 'Needs a nudge', avatar: 'NB' },
-  { id: 5, name: 'Sophia Lee', company: 'Lumen Dental', channel: 'WhatsApp', value: 3100, status: 'Warm', last: 'Yesterday', intent: 'Decision maker engaged', avatar: 'SL' },
+  { id: 'L-1042', name: 'Amara Okafor', company: 'Northstar Properties', email: 'amara@northstar.ng', value: 4800, status: 'Hot', stage: 'Proposal', source: 'Website', lastContact: 'Today', nextFollowUp: 'Today, 4:30 PM', message: 'We need a property website with listings, WhatsApp enquiries and an admin panel.', score: 94 },
+  { id: 'L-1041', name: 'Daniel Mensah', company: 'Kora Logistics', email: 'daniel@koralogistics.com', value: 3200, status: 'Hot', stage: 'Qualified', source: 'Referral', lastContact: 'Today', nextFollowUp: 'Tomorrow, 9:00 AM', message: 'Can you help us automate our quote requests and follow up with prospects?', score: 88 },
+  { id: 'L-1040', name: 'Sofia Bello', company: 'Bello & Co.', email: 'hello@belloco.com', value: 1800, status: 'Warm', stage: 'New', source: 'Landing page', lastContact: 'Yesterday', nextFollowUp: 'Tomorrow, 2:00 PM', message: 'Interested in your service. What is the starting price?', score: 73 },
+  { id: 'L-1039', name: 'Tunde Adebayo', company: 'Vertex Studio', email: 'tunde@vertex.studio', value: 2500, status: 'Warm', stage: 'Contacted', source: 'Website', lastContact: 'Yesterday', nextFollowUp: 'Sep 14, 11:00 AM', message: 'I saw your demo and would like to understand how the follow-up automation works.', score: 67 },
+  { id: 'L-1038', name: 'Maya Reed', company: 'Maya Consulting', email: 'maya@mayaconsulting.co', value: 1200, status: 'Cold', stage: 'New', source: 'Import', lastContact: 'Sep 10', nextFollowUp: 'Sep 16, 10:00 AM', message: 'Please send more information about your plans.', score: 42 },
 ];
 
-const nav = [
-  ['Overview', LayoutDashboard], ['Leads', Target], ['Customers', Users], ['Conversations', MessageSquareText], ['Follow-ups', Clock3]
+const initialActivity = [
+  { icon: 'spark', text: 'AI qualified Amara Okafor as a high-intent lead', time: '4 min ago' },
+  { icon: 'send', text: 'Follow-up drafted for Daniel Mensah', time: '18 min ago' },
+  { icon: 'check', text: 'Sofia Bello moved to qualified', time: '1 hr ago' },
+  { icon: 'zap', text: 'Automation sequence completed for 3 leads', time: '2 hrs ago' },
 ];
+
+const stages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Won'];
+const storageKey = 'valo-mvp-leads-v1';
+
+function money(n) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n); }
+function cx(...items) { return items.filter(Boolean).join(' '); }
 
 function App() {
+  const [leads, setLeads] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey)) || seedLeads; } catch { return seedLeads; }
+  });
   const [active, setActive] = useState('Overview');
-  const [leads, setLeads] = useState(seedLeads);
+  const [selectedId, setSelectedId] = useState('L-1042');
   const [query, setQuery] = useState('');
-  const [aiOpen, setAiOpen] = useState(false);
+  const [filter, setFilter] = useState('All');
+  const [showAdd, setShowAdd] = useState(false);
+  const [showMobileNav, setShowMobileNav] = useState(false);
+  const [activity, setActivity] = useState(initialActivity);
+  const [toast, setToast] = useState('');
 
-  const filtered = useMemo(() => leads.filter(l => `${l.name} ${l.company} ${l.channel}`.toLowerCase().includes(query.toLowerCase())), [leads, query]);
-  const totalPipeline = leads.reduce((sum, l) => sum + l.value, 0);
+  useEffect(() => { localStorage.setItem(storageKey, JSON.stringify(leads)); }, [leads]);
+  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2800); return () => clearTimeout(t); } }, [toast]);
 
-  function addLead() {
-    const next = { id: Date.now(), name: 'New lead', company: 'Unassigned company', channel: 'Manual', value: 0, status: 'New', last: 'Just now', intent: 'Needs qualification', avatar: 'NL' };
-    setLeads([next, ...leads]);
+  const filteredLeads = useMemo(() => leads.filter(l => {
+    const q = query.toLowerCase();
+    const matchesQ = !q || [l.name, l.company, l.email, l.message].some(v => String(v).toLowerCase().includes(q));
+    const matchesF = filter === 'All' || l.status === filter || l.stage === filter;
+    return matchesQ && matchesF;
+  }), [leads, query, filter]);
+
+  const selected = leads.find(l => l.id === selectedId) || filteredLeads[0] || leads[0];
+  const pipelineValue = leads.reduce((s, l) => s + l.value, 0);
+  const hotCount = leads.filter(l => l.status === 'Hot').length;
+  const followUps = leads.filter(l => l.nextFollowUp.includes('Today') || l.nextFollowUp.includes('Tomorrow')).length;
+
+  function addLead(data) {
+    const lead = { ...data, id: `L-${1043 + leads.length}`, score: Number(data.score || 60), status: Number(data.score || 60) >= 80 ? 'Hot' : Number(data.score || 60) >= 60 ? 'Warm' : 'Cold', stage: 'New', lastContact: 'Just now', nextFollowUp: 'Tomorrow, 10:00 AM' };
+    setLeads(prev => [lead, ...prev]);
+    setSelectedId(lead.id);
+    setShowAdd(false);
+    setActivity(prev => [{ icon: 'spark', text: `AI added ${lead.name} to the lead queue`, time: 'Just now' }, ...prev].slice(0, 6));
+    setToast('Lead added and scored by Valo.');
   }
 
-  return <div className="app">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><Zap size={17} fill="currentColor" /></div><span>valo</span></div>
-      <div className="workspace"><div className="workspace-avatar">A</div><div><strong>Acme Workspace</strong><span>Business workspace</span></div><ChevronDown size={15}/></div>
-      <div className="nav-label">WORKSPACE</div>
-      <nav>{nav.map(([label, Icon]) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => setActive(label)}><Icon size={18}/><span>{label}</span>{label === 'Leads' && <b>{leads.length}</b>}</button>)}</nav>
-      <div className="nav-label lower">MANAGE</div>
-      <nav><button className="nav-item"><Bot size={18}/><span>AI automations</span><span className="new-pill">NEW</span></button><button className="nav-item"><Settings size={18}/><span>Settings</span></button></nav>
-      <div className="sidebar-bottom"><div className="ai-card"><div className="ai-icon"><Sparkles size={16}/></div><div><strong>Valo AI</strong><p>Your sales copilot is active.</p></div></div><div className="user-row"><div className="user-avatar">Y</div><div><strong>Your account</strong><span>Free workspace</span></div><MoreHorizontal size={17}/></div></div>
-    </aside>
+  function updateStage(id, stage) {
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, stage, status: stage === 'Won' ? 'Won' : l.status } : l));
+    setActivity(prev => [{ icon: 'check', text: `Lead moved to ${stage}`, time: 'Just now' }, ...prev].slice(0, 6));
+    setToast(`Moved to ${stage}.`);
+  }
 
-    <main className="main">
-      <header className="topbar"><div><span className="eyebrow">{active === 'Overview' ? 'MONDAY, SEPTEMBER 12' : 'WORKSPACE'}</span><h1>{active === 'Overview' ? 'Good evening.' : active}</h1></div><div className="top-actions"><button className="icon-btn"><CircleHelp size={18}/></button><button className="icon-btn"><Settings size={18}/></button><button className="primary" onClick={addLead}><Plus size={17}/> Add lead</button></div></header>
+  function draftFollowUp() {
+    setToast('AI follow-up drafted — review it in the lead panel.');
+    setActivity(prev => [{ icon: 'send', text: `AI drafted a follow-up for ${selected.name}`, time: 'Just now' }, ...prev].slice(0, 6));
+  }
 
-      {active === 'Overview' ? <>
-        <section className="hero"><div><div className="hero-icon"><Sparkles size={18}/></div><div><h2>Your pipeline is moving.</h2><p>Valo found <strong>3 leads</strong> that need attention today.</p></div></div><button className="soft-btn" onClick={() => setAiOpen(true)}>Ask Valo AI <Sparkles size={15}/></button></section>
-        <section className="stats">
-          <Stat label="Pipeline value" value={`$${totalPipeline.toLocaleString()}`} change="+18.4%" icon={TrendingUp}/>
-          <Stat label="Open leads" value={leads.length} change="+12 this week" icon={Target}/>
-          <Stat label="Follow-ups due" value="7" change="3 high priority" icon={Clock3}/>
-          <Stat label="AI actions" value="42" change="This month" icon={Sparkles}/>
+  return (
+    <div className="app-shell">
+      <aside className={cx('sidebar', showMobileNav && 'mobile-open')}>
+        <div className="brand"><div className="brand-mark">V</div><div><strong>valo</strong><span>AI SALES AUTOMATION</span></div></div>
+        <div className="workspace"><div className="workspace-avatar">A</div><div><b>Acme workspace</b><small>Growth team</small></div><ChevronDown size={15}/></div>
+        <nav>
+          <p className="nav-label">WORKSPACE</p>
+          {[
+            ['Overview', LayoutDashboard], ['Leads', Users], ['Inbox', Inbox], ['Follow-ups', CalendarClock], ['Automations', Zap],
+          ].map(([label, Icon]) => <button key={label} className={cx('nav-item', active === label && 'active')} onClick={() => { setActive(label); setShowMobileNav(false); }}><Icon size={18}/><span>{label}</span>{label === 'Inbox' && <em>4</em>}</button>)}
+          <p className="nav-label spaced">MANAGE</p>
+          {['Customers', 'Analytics', 'Settings'].map((label) => <button key={label} className={cx('nav-item', active === label && 'active')} onClick={() => { setActive(label); setShowMobileNav(false); }}><span className="nav-dot"/><span>{label}</span></button>)}
+        </nav>
+        <div className="sidebar-bottom"><div className="usage"><div><span>AI usage</span><b>68%</b></div><div className="progress"><i style={{width:'68%'}}/></div><small>1,360 / 2,000 actions</small></div><button className="help"><MessageSquare size={16}/>Need help?</button></div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar"><button className="mobile-menu" onClick={() => setShowMobileNav(v => !v)}><Menu/></button><div className="crumb">Workspace <span>/</span> {active}</div><div className="top-actions"><button className="icon-btn"><Search size={18}/></button><button className="icon-btn notify"><Bell size={18}/><i/></button><div className="user"><div className="user-avatar">YO</div><span>Owner</span><ChevronDown size={14}/></div></div></header>
+
+        <section className="content">
+          <div className="page-head"><div><p className="eyebrow">GOOD EVENING</p><h1>{active === 'Overview' ? 'Your sales, on autopilot.' : active}</h1><p className="sub">{active === 'Overview' ? 'Valo is keeping your pipeline moving while you focus on closing.' : 'Manage your revenue workflow from one intelligent workspace.'}</p></div><button className="primary" onClick={() => setShowAdd(true)}><Plus size={17}/>Add lead</button></div>
+
+          {active === 'Overview' ? <>
+            <div className="metrics">
+              <Metric icon={Target} label="Pipeline value" value={money(pipelineValue)} change="+18.4%" detail="vs last month" />
+              <Metric icon={Flame} label="Hot leads" value={hotCount} change="+4" detail="this week" />
+              <Metric icon={CalendarClock} label="Follow-ups" value={followUps} change="Due soon" detail="next 24 hours" />
+              <Metric icon={TrendingUp} label="Win rate" value="31.8%" change="+6.2%" detail="vs last month" />
+            </div>
+
+            <div className="grid-main">
+              <section className="card pipeline-card">
+                <div className="card-head"><div><h2>Sales pipeline</h2><p>Track every opportunity from enquiry to revenue.</p></div><button className="ghost" onClick={() => setActive('Leads')}>View all <ArrowRight size={15}/></button></div>
+                <div className="pipeline">{stages.map(stage => { const items = leads.filter(l => l.stage === stage); return <div className="stage" key={stage}><div className="stage-head"><span>{stage}</span><b>{items.length}</b></div><div className="stage-line"/>{items.slice(0, 3).map(l => <LeadCard key={l.id} lead={l} onClick={() => { setSelectedId(l.id); setActive('Leads'); }} />)}{items.length === 0 && <div className="empty-stage">No leads</div>}</div>; })}</div>
+              </section>
+              <section className="card ai-card"><div className="ai-orb"><Sparkles size={20}/></div><div className="ai-title"><div><span>VALO AI</span><h2>Sales copilot</h2></div><span className="live"><i/>Live</span></div><p className="ai-copy">Your AI has been working in the background. Here are the actions that need your attention.</p><div className="ai-task"><div className="task-icon hot"><Flame size={16}/></div><div><b>2 high-intent leads need replies</b><span>Amara and Daniel are waiting.</span></div><ArrowRight size={16}/></div><div className="ai-task"><div className="task-icon"><Clock3 size={16}/></div><div><b>3 follow-ups due today</b><span>Best time to contact: 4–6 PM.</span></div><ArrowRight size={16}/></div><button className="ai-button" onClick={() => { setActive('Leads'); setToast('Showing your highest-priority leads.'); }}><Bot size={17}/>Ask Valo AI</button></section>
+            </div>
+
+            <div className="grid-bottom"><section className="card table-card"><div className="card-head"><div><h2>Priority leads</h2><p>Leads most likely to convert next.</p></div><button className="ghost" onClick={() => setActive('Leads')}>Manage leads <ArrowRight size={15}/></button></div><LeadTable leads={leads.slice(0, 5)} onSelect={(id) => {setSelectedId(id); setActive('Leads')}} /></section><ActivityFeed activity={activity}/></div>
+          </> : <WorkspacePage active={active} leads={filteredLeads} onAdd={() => setShowAdd(true)} onSelect={(id) => setSelectedId(id)} onStage={updateStage} selected={selected} onDraft={draftFollowUp} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} />}
         </section>
-        <section className="content-grid">
-          <div className="panel leads-panel"><div className="panel-head"><div><h3>Priority leads</h3><p>People most likely to convert next.</p></div><button className="link-btn" onClick={() => setActive('Leads')}>View all <span>→</span></button></div><div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search leads..."/></div><div className="lead-list">{filtered.slice(0,5).map(lead => <Lead key={lead.id} lead={lead}/>)}</div></div>
-          <div className="panel automation-panel"><div className="panel-head"><div><h3>AI automations</h3><p>Running quietly in the background.</p></div><button className="dots"><MoreHorizontal size={18}/></button></div><Automation icon={MessageSquareText} title="Lead qualification" text="New enquiries are being scored." status="Running"/><Automation icon={Clock3} title="Follow-up assistant" text="7 conversations need attention." status="7 due"/><Automation icon={Sparkles} title="Reply copilot" text="Drafts are ready for review." status="12 drafts"/></div>
-        </section>
-        <section className="bottom-grid"><div className="panel insight"><div className="insight-orb"><Sparkles size={20}/></div><div><span className="mini-label">VALO INSIGHT</span><h3>Your fastest channel is WhatsApp.</h3><p>Leads from WhatsApp are converting <strong>31% faster</strong> than your other channels this week.</p></div></div><div className="panel task"><div className="task-top"><span className="mini-label">NEXT BEST ACTION</span><span className="priority">HIGH</span></div><h3>Follow up with Olivia Carter</h3><p>She asked for a proposal 12 minutes ago.</p><button className="action-btn" onClick={() => setAiOpen(true)}>Generate reply <Sparkles size={15}/></button></div></section>
-      </> : <div className="empty-page"><div className="empty-icon"><Sparkles size={22}/></div><h2>{active} is ready.</h2><p>This section is part of the Valo workspace. We're building the workflow around real customer actions, not empty screens.</p><button className="primary" onClick={() => setActive('Overview')}>Back to overview</button></div>}
-    </main>
-    {aiOpen && <div className="modal-backdrop" onClick={() => setAiOpen(false)}><div className="ai-modal" onClick={e => e.stopPropagation()}><div className="modal-head"><div className="ai-icon"><Sparkles size={17}/></div><div><strong>Valo AI</strong><span>Sales copilot</span></div><button className="close" onClick={() => setAiOpen(false)}>×</button></div><div className="ai-response"><span>Suggested action</span><h3>Send Olivia a concise proposal follow-up.</h3><p>“Hi Olivia — thanks for reaching out. I’ve prepared the proposal based on what you shared. I’d be happy to walk you through it and answer any questions. Would today at 4pm work?”</p></div><div className="modal-actions"><button className="soft-btn" onClick={() => setAiOpen(false)}>Edit draft</button><button className="primary" onClick={() => setAiOpen(false)}>Approve & send</button></div></div></div>}
-  </div>
+      </main>
+
+      {active === 'Leads' && selected && <LeadDrawer lead={selected} onClose={() => setSelectedId(null)} onStage={updateStage} onDraft={draftFollowUp}/>} 
+      {showAdd && <AddLeadModal onClose={() => setShowAdd(false)} onAdd={addLead}/>} 
+      {toast && <div className="toast"><Check size={17}/>{toast}</div>}
+    </div>
+  );
 }
 
-function Stat({label,value,change,icon:Icon}) { return <div className="stat"><div className="stat-top"><span>{label}</span><Icon size={17}/></div><strong>{value}</strong><small>{change}</small></div> }
-function Lead({lead}) { return <div className="lead"><div className="avatar">{lead.avatar}</div><div className="lead-main"><div className="lead-name"><strong>{lead.name}</strong><span className={`status ${lead.status.toLowerCase().replace(' ','-')}`}>{lead.status}</span></div><span>{lead.company} · {lead.channel}</span></div><div className="lead-intent"><strong>${lead.value.toLocaleString()}</strong><span>{lead.intent}</span></div><span className="lead-time">{lead.last}</span><MoreHorizontal size={17} className="lead-more"/></div> }
-function Automation({icon:Icon,title,text,status}) { return <div className="automation"><div className="automation-icon"><Icon size={17}/></div><div><strong>{title}</strong><span>{text}</span></div><em>{status}</em></div> }
+function Metric({icon:Icon,label,value,change,detail}) { return <div className="metric"><div className="metric-icon"><Icon size={18}/></div><div className="metric-body"><span>{label}</span><strong>{value}</strong><small><b>{change}</b> {detail}</small></div></div>; }
+function LeadCard({lead,onClick}) { return <button className="lead-card" onClick={onClick}><div className="lead-top"><span className={cx('status', lead.status.toLowerCase())}>{lead.status}</span><span className="score">{lead.score}</span></div><b>{lead.name}</b><small>{lead.company}</small><div className="lead-bottom"><span>{money(lead.value)}</span><span>{lead.source}</span></div></button>; }
+function LeadTable({leads,onSelect}) { return <div className="lead-table"><div className="table-row table-head"><span>Lead</span><span>Company</span><span>Value</span><span>Score</span><span>Next action</span></div>{leads.map(l => <button className="table-row" key={l.id} onClick={() => onSelect(l.id)}><span className="person"><i>{l.name.split(' ').map(x=>x[0]).join('')}</i><b>{l.name}<small>{l.email}</small></b></span><span>{l.company}</span><span>{money(l.value)}</span><span><strong className={cx('score-pill', l.status.toLowerCase())}>{l.score}</strong></span><span>{l.nextFollowUp}</span></button>)}</div>; }
+function ActivityFeed({activity}) { return <section className="card activity-card"><div className="card-head"><div><h2>Activity</h2><p>What Valo has done recently.</p></div><Activity size={17}/></div><div className="activity-list">{activity.map((a,i)=><div className="activity-item" key={i}><div className="activity-icon"><Sparkles size={14}/></div><div><b>{a.text}</b><span>{a.time}</span></div></div>)}</div></section>; }
 
-createRoot(document.getElementById('root')).render(<App />);
+function WorkspacePage({active,leads,onAdd,onSelect,onStage,selected,onDraft,query,setQuery,filter,setFilter}) {
+  if (active === 'Analytics') return <div className="analytics-grid"><section className="card chart-card"><div className="card-head"><div><h2>Revenue momentum</h2><p>Pipeline value over the last 30 days.</p></div><span className="chart-value">$14.8k <small>+18.4%</small></span></div><div className="fake-chart"><div className="chart-grid">{[1,2,3,4,5].map(i=><i key={i}/>)}</div><svg viewBox="0 0 700 220" preserveAspectRatio="none"><path d="M0 190 C70 185 80 170 135 178 S205 120 260 145 S330 80 390 105 S470 125 520 65 S610 80 700 25" fill="none" stroke="currentColor" strokeWidth="4"/><path d="M0 190 C70 185 80 170 135 178 S205 120 260 145 S330 80 390 105 S470 125 520 65 S610 80 700 25 V220 H0Z" fill="currentColor" opacity=".08"/></svg></div></section><Metric icon={CircleDollarSign} label="Won revenue" value="$8,420" change="+22.8%" detail="this month"/><Metric icon={Target} label="Qualified leads" value="27" change="+12" detail="this month"/><Metric icon={Zap} label="AI actions" value="186" change="+34%" detail="vs last month"/></div>;
+  if (active === 'Settings') return <SettingsPage/>;
+  if (active === 'Customers') return <div className="empty-page card"><Users size={30}/><h2>Customer workspace</h2><p>Customers are created automatically as leads progress through the pipeline. Your current MVP uses the same persistent local lead store.</p><button className="primary" onClick={onAdd}><Plus size={16}/>Add first customer</button></div>;
+  if (active === 'Inbox') return <div className="inbox-layout"><section className="card inbox-list"><div className="card-head"><div><h2>Conversation inbox</h2><p>Prioritized by intent.</p></div></div>{leads.slice(0,5).map(l=><button className="conversation" key={l.id} onClick={()=>onSelect(l.id)}><div className="avatar">{l.name.split(' ').map(x=>x[0]).join('')}</div><div><b>{l.name}</b><span>{l.message}</span></div><em>{l.status}</em></button>)}</section><section className="card inbox-detail"><MessageSquare size={28}/><h2>Select a conversation</h2><p>Choose a lead to inspect the conversation and let Valo draft the next reply.</p></section></div>;
+  if (active === 'Follow-ups' || active === 'Automations') return <div className="card automation-page"><div className="card-head"><div><h2>{active}</h2><p>{active === 'Follow-ups' ? 'Keep prospects moving without manual reminders.' : 'Rules that turn repetitive sales work into background jobs.'}</p></div><button className="primary"><Plus size={16}/>{active === 'Follow-ups' ? 'Schedule follow-up' : 'Create automation'}</button></div><div className="automation-list">{['New lead → qualify within 2 minutes','No reply after 24h → send helpful follow-up','Qualified lead → alert owner','Proposal sent → follow up in 2 days'].map((x,i)=><div className="automation-row" key={x}><div className="task-icon"><Zap size={16}/></div><div><b>{x}</b><span>{i === 0 ? 'Active · AI qualification' : 'Active · monitored by Valo'}</span></div><label className="switch"><input type="checkbox" defaultChecked/><span/></label></div>)}</div></div>;
+
+  return <div className="leads-workspace"><section className="card leads-card"><div className="card-head"><div><h2>Lead command center</h2><p>Capture, qualify and move every opportunity.</p></div><button className="primary" onClick={onAdd}><Plus size={16}/>Add lead</button></div><div className="toolbar"><div className="search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search leads..."/></div><button className="filter"><Filter size={15}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option>All</option><option>Hot</option><option>Warm</option><option>Cold</option><option>Qualified</option><option>Proposal</option></select></button></div><LeadTable leads={leads} onSelect={onSelect}/></section>{selected && <section className="card quick-detail"><div className="detail-avatar">{selected.name.split(' ').map(x=>x[0]).join('')}</div><span className={cx('status',selected.status.toLowerCase())}>{selected.status} · {selected.score}/100</span><h2>{selected.name}</h2><p>{selected.company}</p><div className="detail-value">{money(selected.value)} <small>estimated value</small></div><div className="detail-message">“{selected.message}”</div><button className="ai-button" onClick={onDraft}><Sparkles size={16}/>Draft AI follow-up</button><label>Pipeline stage</label><div className="stage-select">{stages.map(s=><button className={selected.stage===s?'chosen':''} key={s} onClick={()=>onStage(selected.id,s)}>{s}</button>)}</div></section>}</div>;
+}
+
+function SettingsPage(){ return <div className="settings-grid"><section className="card settings-card"><div className="settings-title"><div className="settings-icon"><Settings size={18}/></div><div><h2>Workspace settings</h2><p>Configure how Valo works for your team.</p></div></div>{[['Workspace name','Acme workspace'],['Default currency','USD — US Dollar'],['Lead scoring','AI assisted'],['Timezone','Africa/Lagos']].map(([a,b])=><label className="setting-row" key={a}><span>{a}</span><input defaultValue={b}/></label>)}<button className="primary">Save changes</button></section><section className="card settings-card"><div className="settings-title"><div className="settings-icon"><Bot size={18}/></div><div><h2>AI controls</h2><p>Keep consequential actions under human control.</p></div></div>{['Auto-score new leads','Draft replies automatically','Suggest follow-up timing','Send messages without review'].map((x,i)=><div className="toggle-row" key={x}><div><b>{x}</b><span>{i===3?'Off by default — enable only when you trust the workflow.':'Enabled for the workspace.'}</span></div><label className="switch"><input type="checkbox" defaultChecked={i!==3}/><span/></label></div>)}</section></div> }
+
+function LeadDrawer({lead,onClose,onStage,onDraft}) { return <div className="drawer-backdrop" onClick={onClose}><aside className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><span>Lead {lead.id}</span><button className="icon-btn" onClick={onClose}><X size={18}/></button></div><div className="drawer-profile"><div className="detail-avatar">{lead.name.split(' ').map(x=>x[0]).join('')}</div><div><h2>{lead.name}</h2><p>{lead.company}</p></div><span className={cx('status',lead.status.toLowerCase())}>{lead.status}</span></div><div className="drawer-score"><div><span>AI intent score</span><strong>{lead.score}<small>/100</small></strong></div><div className="score-ring"><span>{lead.score}</span></div></div><div className="drawer-section"><h3>Latest enquiry</h3><p>{lead.message}</p></div><div className="drawer-section"><h3>Next action</h3><div className="next-action"><Clock3 size={16}/><div><b>{lead.nextFollowUp}</b><span>Follow up with a helpful, specific answer.</span></div></div></div><div className="drawer-actions"><button className="secondary" onClick={onDraft}><Sparkles size={16}/>Draft reply</button><button className="primary" onClick={()=>onStage(lead.id,'Qualified')}><Check size={16}/>Qualify lead</button></div></aside></div>; }
+
+function AddLeadModal({onClose,onAdd}) { const [form,setForm]=useState({name:'',company:'',email:'',value:'1500',message:'',score:'70'}); const change=e=>setForm({...form,[e.target.name]:e.target.value}); return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><span>NEW OPPORTUNITY</span><h2>Add a lead</h2><p>Valo will score and prioritize it automatically.</p></div><button className="icon-btn" onClick={onClose}><X size={18}/></button></div><div className="form-grid"><label>Contact name<input name="name" value={form.name} onChange={change} placeholder="e.g. Amara Okafor" autoFocus/></label><label>Company<input name="company" value={form.company} onChange={change} placeholder="Company name"/></label><label>Email<input name="email" value={form.email} onChange={change} placeholder="name@company.com"/></label><label>Estimated value<input name="value" type="number" value={form.value} onChange={change}/></label><label className="full">Enquiry<textarea name="message" value={form.message} onChange={change} placeholder="Paste the customer's enquiry..."/></label><label>Intent score<input name="score" type="number" min="0" max="100" value={form.score} onChange={change}/></label></div><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!form.name || !form.message} onClick={()=>onAdd({...form,value:Number(form.value)})}><Sparkles size={16}/>Add + score with AI</button></div></div></div>; }
+
+createRoot(document.getElementById('root')).render(<App/>);
